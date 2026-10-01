@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codebase Memory Graph Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: #1a1d27;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid #2a2d3a;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #7cbfbc;
+    white-space: nowrap;
+  }
+  .header .spacer { flex: 1; }
+  .header select, .header input {
+    background: #252836;
+    color: #e0e0e0;
+    border: 1px solid #3a3d4a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    outline: none;
+  }
+  .header select:focus, .header input:focus {
+    border-color: #7cbfbc;
+  }
+  .header button {
+    background: #7cbfbc;
+    color: #0f1117;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .header button:hover { background: #8fdcd3; }
+  .header .stats {
+    font-size: 12px;
+    color: #888;
+    display: flex;
+    gap: 12px;
+  }
+  .header .stats span { color: #aaa; }
+  .header .stats strong { color: #7cbfbc; }
+
+  /* ── Main layout ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 320px;
+    background: #161922;
+    border-right: 1px solid #2a2d3a;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+  .sidebar-section {
+    padding: 12px 16px;
+    border-bottom: 1px solid #242734;
+  }
+  .sidebar-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #667;
+    margin-bottom: 8px;
+  }
+  .search-box {
+    width: 100%;
+    background: #252836;
+    color: #e0e0e0;
+    border: 1px solid #3a3d4a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    outline: none;
+  }
+  .search-box:focus { border-color: #7cbfbc; }
+  .search-results {
+    list-style: none;
+    max-height: 250px;
+    overflow-y: auto;
+  }
+  .search-results li {
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .search-results li:hover { background: #2a2d3a; }
+  .search-results li .label-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    margin-right: 6px;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* ── Legend ── */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px; }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Node table in sidebar ── */
+  .node-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .node-table th {
+    text-align: left;
+    font-weight: 600;
+    color: #667;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #242734;
+  }
+  .node-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #1e2130;
+    vertical-align: top;
+  }
+  .node-table tr:hover { background: #1e2130; }
+  .node-table .fname { color: #7cbfbc; font-family: monospace; font-size: 11px; }
+  .node-table .prop-key { color: #81c784; }
+  .node-table .prop-val { color: #ffab91; font-family: monospace; font-size: 11px; }
+
+  /* ── Graph area ── */
+  .graph-area {
+    flex: 1;
+    position: relative;
+    background: #0f1117;
+    overflow: hidden;
+  }
+  .graph-area svg { width: 100%; height: 100%; }
+  .graph-tooltip {
+    position: absolute;
+    background: #1a1d27;
+    border: 1px solid #3a3d4a;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    pointer-events: none;
+    max-width: 350px;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    display: none;
+  }
+  .graph-tooltip .tt-name { color: #7cbfbc; font-weight: 600; font-size: 13px; }
+  .graph-tooltip .tt-label { color: #888; font-size: 11px; }
+  .graph-tooltip .tt-file { color: #aaa; font-family: monospace; font-size: 11px; margin-top: 2px; }
+
+  /* ── Loading overlay ── */
+  .loading {
+    position: absolute;
+    inset: 0;
+    background: rgba(15,17,23,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .loading .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #2a2d3a;
+    border-top-color: #7cbfbc;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading .msg { font-size: 14px; color: #aaa; }
+
+  /* ── Edge labels ── */
+  .edge-label {
+    font-size: 9px;
+    fill: #555;
+    pointer-events: none;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#x1F4E6; Codebase Memory Graph Viewer</h1>
+  <select id="projectSelect" style="width:auto; min-width:180px;">
+    <option value="">-- Select a project --</option>
+  </select>
+  <button id="loadBtn" disabled>Load Graph</button>
+  <div class="spacer"></div>
+  <div class="stats" id="statsBar" style="display:none;">
+    <span id="statNodes">Nodes: <strong>0</strong></span>
+    <span id="statEdges">Edges: <strong>0</strong></span>
+    <span id="statProject">Project: <strong>-</strong></span>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>&#x1F50D; Search Nodes</h3>
+      <input type="text" id="searchBox" class="search-box" placeholder="Search by name, path, qualified name…" disabled>
+      <ul class="search-results" id="searchResults" style="display:none;"></ul>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>&#x1F3A2; Legend</h3>
+      <div class="legend" id="legendContainer"></div>
+    </div>
+
+    <div class="sidebar-section" style="flex:1; overflow-y:auto;">
+      <h3>&#x1F4C4; Node Details</h3>
+      <table class="node-table" id="nodeDetailTable" style="display:none;">
+        <tr><th colspan="2" id="ndTitle"></th></tr>
+        <tr><th>Label</th><td id="ndLabel"></td></tr>
+        <tr><th>Name</th><td id="ndName"></td></tr>
+        <tr><th>Qualified Name</th><td id="ndQName" style="font-family:monospace;font-size:11px;"></td></tr>
+        <tr><th>File</th><td id="ndFile" style="font-family:monospace;font-size:11px;"></td></tr>
+        <tr><th>Lines</th><td id="ndLines"></td></tr>
+        <tr><th>Properties</th><td id="ndProps"></td></tr>
+      </table>
+      <div id="nodeEmpty" style="padding:20px;text-align:center;color:#555;font-size:13px;">
+        Select a node in the graph to see details
+      </div>
+    </div>
+  </div>
+
+  <!-- Graph area -->
+  <div class="graph-area" id="graphArea">
+    <div class="loading" id="loadingOverlay" style="display:none;">
+      <div class="spinner"></div>
+      <div class="msg" id="loadingMsg">Loading graph…</div>
+    </div>
+    <svg id="graphSvg"></svg>
+    <div class="graph-tooltip" id="tooltip"></div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ── State ──
+let currentProject = null;
+let graphData = null;
+let simulation = null;
+let nodeElements = null;
+let edgeElements = null;
+let labelElements = null;
+let allNodes = [];   // full node list
+let allEdges = [];   // full edge list
+let selectedNodeId = null;
+
+// ── DOM refs ──
+const projectSelect = document.getElementById("projectSelect");
+const loadBtn = document.getElementById("loadBtn");
+const searchBox = document.getElementById("searchBox");
+const searchResults = document.getElementById("searchResults");
+const legendContainer = document.getElementById("legendContainer");
+const nodeDetailTable = document.getElementById("nodeDetailTable");
+const nodeEmpty = document.getElementById("nodeEmpty");
+const loadingOverlay = document.getElementById("loadingOverlay");
+const loadingMsg = document.getElementById("loadingMsg");
+const svg = d3.select("#graphSvg");
+const tooltip = d3.select("#tooltip");
+const statNodes = document.getElementById("statNodes");
+const statEdges = document.getElementById("statEdges");
+const statProject = document.getElementById("statProject");
+
+// ── Color map ──
+const nodeColors = {
+  "Project": "#4fc3f7", "Branch": "#81c784", "File": "#aed581",
+  "Folder": "#dce775", "Module": "#fff176", "Class": "#ffcc80",
+  "Method": "#ffab91", "Function": "#ff8a65", "Variable": "#f06292",
+  "EnvVar": "#e57373", "Package": "#ba68c8", "Section": "#9575cd",
+  "Decorator": "#7986cb", "Route": "#4db6ac", "Property": "#64b5f6",
+  "Interface": "#ce93d8", "TypeAlias": "#f48fb1", "Enum": "#a1887f",
+  "EnumMember": "#8d6e63", "Import": "#90a4ae", "Export": "#78909c",
+  "Generic": "#bcaaa4",
+};
+const defaultColor = "#bdbdbd";
+
+function nodeColor(label) { return nodeColors[label] || defaultColor; }
+
+// ── Build legend ──
+function buildLegend() {
+  const labels = [...new Set(
+    Object.keys(nodeColors).sort()
+  )];
+  legendContainer.innerHTML = labels.map(l =>
+    `<div class="legend-item">
+      <div class="legend-dot" style="background:${nodeColors[l]}"></div>
+      ${l}
+    </div>`
+  ).join("");
+}
+buildLegend();
+
+// ── Load project list ──
+async function loadProjectList() {
+  try {
+    const resp = await fetch("/api/projects");
+    if (!resp.ok) throw new Error("auth required");
+    const projects = await resp.json();
+    projectSelect.innerHTML = '<option value="">-- Select a project --</option>' +
+      projects.map(p =>
+        `<option value="${p.display_name}">${p.display_name} (${p.node_count} nodes, ${p.edge_count} edges)</option>`
+      ).join("");
+    loadBtn.disabled = false;
+    projectSelect.disabled = false;
+    searchBox.disabled = false;
+  } catch (e) {
+    console.error("Failed to load projects:", e);
+    projectSelect.innerHTML = '<option value="">Error loading projects</option>';
+  }
+}
+loadProjectList();
+
+// ── Load graph ──
+async function loadGraph() {
+  const project = projectSelect.value;
+  if (!project) return;
+  currentProject = project;
+  loadingOverlay.style.display = "flex";
+  loadingMsg.textContent = `Loading "${project}"…`;
+
+  try {
+    const resp = await fetch(`/api/graph?project=${encodeURIComponent(project)}`);
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error || "failed to load graph");
+    }
+    graphData = await resp.json();
+
+    // Show stats
+    statProject.querySelector("strong").textContent = project;
+    statNodes.querySelector("strong").textContent = graphData.node_count.toLocaleString();
+    statEdges.querySelector("strong").textContent = graphData.edge_count.toLocaleString();
+    document.getElementById("statsBar").style.display = "flex";
+
+    allNodes = graphData.nodes;
+    allEdges = graphData.edges;
+    searchBox.disabled = false;
+    renderGraph();
+  } catch (e) {
+    alert("Error loading graph: " + e.message);
+  } finally {
+    loadingOverlay.style.display = "none";
+  }
+}
+
+loadBtn.addEventListener("click", loadGraph);
+projectSelect.addEventListener("change", () => {
+  nodeDetailTable.style.display = "none";
+  nodeEmpty.style.display = "block";
+  selectedNodeId = null;
+});
+
+// ── Render D3 force graph ──
+function renderGraph() {
+  svg.selectAll("*").remove();
+
+  const width = document.getElementById("graphArea").clientWidth;
+  const height = document.getElementById("graphArea").clientHeight;
+
+  // Build lookup
+  const nodeMap = {};
+  allNodes.forEach(n => { nodeMap[n.id] = n; });
+
+  // Color scale
+  const color = d => nodeColor(d.label);
+
+  // Simulation
+  simulation = d3.forceSimulation(allNodes)
+    .force("link", d3.forceLink(allEdges).id(d => d.id).distance(80))
+    .force("charge", d3.forceManyBody().strength(-180))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collision", d3.forceCollide(12));
+
+  // Arrow marker
+  svg.append("defs").append("marker")
+    .attr("id", "arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 20)
+    .attr("refY", 0)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", "#444");
+
+  // Edges
+  edgeElements = svg.append("g")
+    .attr("class", "edges")
+    .selectAll("line")
+    .data(allEdges)
+    .enter().append("line")
+    .attr("stroke", "#333")
+    .attr("stroke-width", d => {
+      const w = { "DEFINES": 2, "CALLS": 1.5, "IMPORTS": 1.5, "USAGE": 1, "DEFINES_METHOD": 1.5,
+                  "INHERITS": 2, "DECORATES": 1, "CONFIGURES": 1, "DEPENDS_ON": 1,
+                  "THROWS": 1, "SIMILAR_TO": 0.5, "CONTAINS_FILE": 1, "CONTAINS_FOLDER": 1,
+                  "OVERRIDE": 1.5, "RAISES": 1, "HTTP_CALLS": 1, "CALL_REFERENCE": 1,
+                  "WRITES": 1, "SEMANTICALLY_RELATED": 0.5 };
+      return w[d.type] || 1;
+    })
+    .attr("stroke-opacity", 0.4)
+    .attr("marker-end", "url(#arrow)");
+
+  // Edge labels (only for important types)
+  const labelEdgeTypes = new Set(["DEFINES", "CALLS", "IMPORTS", "INHERITS", "DECORATES",
+                                   "CONFIGURES", "DEPENDS_ON", "OVERRIDE", "DEFINES_METHOD"]);
+  labelElements = svg.append("g")
+    .attr("class", "edge-labels")
+    .selectAll("text")
+    .data(allEdges.filter(d => labelEdgeTypes.has(d.type)))
+    .enter().append("text")
+    .attr("class", "edge-label")
+    .text(d => d.type);
+
+  // Nodes
+  const g = svg.append("g").attr("class", "nodes");
+
+  nodeElements = g.selectAll("g.node")
+    .data(allNodes)
+    .enter().append("g")
+    .attr("class", "node")
+    .style("cursor", "pointer")
+    .call(d3.drag()
+      .on("start", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+      .on("end", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    )
+    .on("click", (event, d) => {
+      event.stopPropagation();
+      selectNode(d.id);
+    })
+    .on("mouseenter", (event, d) => {
+      tooltip.style("display", "block");
+      const rect = document.getElementById("graphArea").getBoundingClientRect();
+      tooltip
+        .html(`<div class="tt-name">${esc(d.name)}</div>
+               <div class="tt-label">${d.label}${d.qualified_name !== d.name ? ' · ' + esc(d.qualified_name) : ''}</div>
+               ${d.file_path ? `<div class="tt-file">${esc(d.file_path)}</div>` : ''}
+               ${d.properties && Object.keys(d.properties).length ? '<div style="margin-top:4px;color:#888;font-size:10px;">⋯</div>' : ''}`)
+        .style("left", (event.clientX - rect.left + 12) + "px")
+        .style("top", (event.clientY - rect.top + 12) + "px");
+    })
+    .on("mousemove", (event, d) => {
+      const rect = document.getElementById("graphArea").getBoundingClientRect();
+      tooltip
+        .style("left", (event.clientX - rect.left + 12) + "px")
+        .style("top", (event.clientY - rect.top + 12) + "px");
+    })
+    .on("mouseleave", () => {
+      tooltip.style("display", "none");
+    });
+
+  // Node circles
+  nodeElements.append("circle")
+    .attr("r", d => {
+      if (d.label === "Project" || d.label === "Branch") return 10;
+      if (d.label === "File") return 5;
+      return 6;
+    })
+    .attr("fill", color)
+    .attr("stroke", d => d3.color(color).darker(0.5))
+    .attr("stroke-width", 1.5)
+    .attr("opacity", 0.9);
+
+  // Highlight selected
+  nodeElements.append("circle")
+    .attr("class", "highlight-ring")
+    .attr("r", d => {
+      if (d.label === "Project" || d.label === "Branch") return 14;
+      if (d.label === "File") return 9;
+      return 10;
+    })
+    .attr("fill", "none")
+    .attr("stroke", d => d.id === selectedNodeId ? "#7cbfbc" : "transparent")
+    .attr("stroke-width", 2.5)
+    .attr("opacity", d => d.id === selectedNodeId ? 1 : 0);
+
+  // Node labels (only for larger nodes to avoid clutter)
+  nodeElements.append("text")
+    .attr("dx", d => d.label === "File" ? 8 : (d.label === "Project" ? 12 : 9))
+    .attr("dy", 3)
+    .text(d => {
+      if (d.label === "Project") return d.name;
+      if (d.label === "Branch") return d.name;
+      if (d.label === "Folder") return d.name;
+      // Truncate long names
+      const name = d.name.length > 25 ? d.name.slice(0, 22) + "…" : d.name;
+      return name;
+    })
+    .attr("font-size", d => d.label === "Project" ? 13 : (d.label === "Folder" ? 11 : 10))
+    .attr("fill", "#ccc")
+    .attr("font-family", "monospace")
+    .attr("pointer-events", "none");
+
+  // Simulation tick
+  simulation.on("tick", () => {
+    edgeElements
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+
+    labelElements
+      .attr("x", d => (d.source.x + d.target.x) / 2)
+      .attr("y", d => (d.source.y + d.target.y) / 2 - 4);
+
+    nodeElements.attr("transform", d => `translate(${d.x},${d.y})`);
+
+    // Update highlight ring positions
+    nodeElements.select(".highlight-ring")
+      .attr("stroke", d => d.id === selectedNodeId ? "#7cbfbc" : "transparent")
+      .attr("opacity", d => d.id === selectedNodeId ? 1 : 0);
+  });
+
+  // Zoom
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 8])
+    .on("zoom", (event) => {
+      svg.selectAll("g.edges, g.edge-labels, g.nodes").attr("transform", event.transform);
+    });
+  svg.call(zoom);
+
+  // Click background to deselect
+  svg.on("click", () => {
+    selectedNodeId = null;
+    updateNodeDetails(null);
+    nodeElements.select(".highlight-ring")
+      .attr("stroke", "transparent")
+      .attr("opacity", 0);
+  });
+}
+
+// ── Select node ──
+function selectNode(nodeId) {
+  selectedNodeId = nodeId;
+  const node = allNodes.find(n => n.id === nodeId);
+  if (node) {
+    nodeDetailTable.style.display = "";
+    nodeEmpty.style.display = "none";
+    updateNodeDetails(node);
+  }
+}
+
+function updateNodeDetails(node) {
+  if (!node) {
+    nodeDetailTable.style.display = "none";
+    nodeEmpty.style.display = "block";
+    return;
+  }
+  document.getElementById("ndTitle").textContent = `${node.label}: ${node.name}`;
+  document.getElementById("ndLabel").textContent = node.label;
+  document.getElementById("ndName").textContent = node.name;
+  document.getElementById("ndQName").textContent = node.qualified_name || "—";
+  document.getElementById("ndFile").textContent = node.file_path || "—";
+  document.getElementById("ndLines").textContent =
+    (node.start_line && node.end_line) ? `${node.start_line}–${node.end_line}` : "—";
+
+  // Properties
+  const propsEl = document.getElementById("ndProps");
+  if (node.properties && Object.keys(node.properties).length > 0) {
+    propsEl.innerHTML = Object.entries(node.properties)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => {
+        const val = typeof v === "object" ? JSON.stringify(v) : String(v);
+        const display = val.length > 120 ? val.slice(0, 120) + "…" : val;
+        return `<div><span class="prop-key">${esc(k)}</span>: <span class="prop-val">${esc(display)}</span></div>`;
+      }).join("");
+    propsEl.style.display = "";
+  } else {
+    propsEl.style.display = "none";
+  }
+}
+
+// ── Search ──
+let searchTimer = null;
+searchBox.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = searchBox.value.trim();
+  if (q.length < 2) {
+    searchResults.style.display = "none";
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    try {
+      const resp = await fetch(`/api/search?project=${encodeURIComponent(currentProject)}&q=${encodeURIComponent(q)}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.results.length === 0) {
+        searchResults.style.display = "none";
+        return;
+      }
+      searchResults.style.display = "block";
+      searchResults.innerHTML = data.results.map(n => {
+        const color = nodeColor(n.label);
+        const displayName = n.qualified_name !== n.name ? n.qualified_name : n.name;
+        return `<li data-id="${n.id}">
+          <span class="label-badge" style="background:${color}">${n.label}</span>
+          ${esc(displayName)}
+          ${n.file_path ? ` <span style="color:#667;font-size:10px;">(${esc(n.file_path)})</span>` : ''}
+        </li>`;
+      }).join("");
+      // Click to navigate
+      searchResults.querySelectorAll("li").forEach(li => {
+        li.addEventListener("click", () => {
+          const id = parseInt(li.dataset.id);
+          // Center camera on this node
+          const node = allNodes.find(n => n.id === id);
+          if (node && simulation) {
+            const transform = d3.zoomIdentity
+              .translate(svg.node().clientWidth / 2, svg.node().clientHeight / 2)
+              .scale(1.5)
+              .translate(-node.x, -node.y);
+            svg.transition().duration(750).call(
+              d3.zoom().transform,
+              d3.zoomIdentity
+                .translate(svg.node().clientWidth / 2, svg.node().clientHeight / 2)
+                .scale(1.8)
+                .translate(-node.x, -node.y)
+            );
+            selectNode(id);
+          }
+        });
+      });
+    } catch (e) {
+      console.error("Search error:", e);
+    }
+  }, 300);
+});
+
+// ── Utility ──
+function esc(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+// ── Resize handler ──
+window.addEventListener("resize", () => {
+  if (simulation) {
+    const width = document.getElementById("graphArea").clientWidth;
+    const height = document.getElementById("graphArea").clientHeight;
+    simulation.force("center", d3.forceCenter(width / 2, height / 2));
+    simulation.alpha(0.3).restart();
+  }
+});
+</script>
+</body>
+</html>
