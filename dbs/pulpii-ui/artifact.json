@@ -1,0 +1,12 @@
+{
+    "schema_version": 2,
+    "commit": "0c72a48bac11ec329048ab23f76075e07842f9c1",
+    "indexed_at": "2026-10-01T01:33:30Z",
+    "project": "opt-data-pulpii-ui",
+    "nodes": 3804,
+    "edges": 10688,
+    "original_size": 9371648,
+    "compressed_size": 1847669,
+    "compression_level": 9,
+    "reconcile_basis": "git-clean-head"
+}
