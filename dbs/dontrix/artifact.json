@@ -1,0 +1,12 @@
+{
+    "schema_version": 2,
+    "commit": "600c6406e32498065de8c0e34ca4eafb3c4a7c00",
+    "indexed_at": "2026-10-01T01:33:20Z",
+    "project": "opt-data-dontrix",
+    "nodes": 2187,
+    "edges": 8681,
+    "original_size": 7208960,
+    "compressed_size": 1290249,
+    "compression_level": 9,
+    "reconcile_basis": "git-clean-head"
+}
